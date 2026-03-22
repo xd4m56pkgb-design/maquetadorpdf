@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Preparador de texto → PDF_TEXTO</title>
+
+<style>
+  :root{
+    --bg:#0f1115;
+    --panel:#171a21;
+    --panel2:#1f2430;
+    --text:#f3f5f7;
+    --muted:#aab2bf;
+    --accent:#4f8cff;
+    --border:#2b3240;
+    --ok:#22c55e;
+  }
+
+  *{ box-sizing:border-box; }
+
+  body{
+    margin:0;
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;
+    background:var(--bg);
+    color:var(--text);
+  }
+
+  .wrap{
+    max-width:1100px;
+    margin:24px auto;
+    padding:0 16px 40px;
+  }
+
+  h1{
+    margin:0 0 8px;
+    font-size:34px;
+  }
+
+  .muted{
+    color:var(--muted);
+    margin-bottom:18px;
+  }
+
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:16px;
+    padding:16px;
+    margin-bottom:16px;
+  }
+
+  .row{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    align-items:center;
+  }
+
+  .btn{
+    appearance:none;
+    border:none;
+    background:var(--accent);
+    color:#fff;
+    font-weight:800;
+    padding:10px 14px;
+    border-radius:12px;
+    cursor:pointer;
+  }
+
+  .btn.sec{
+    background:var(--panel2);
+    border:1px solid var(--border);
+  }
+
+  textarea{
+    width:100%;
+    min-height:260px;
+    resize:vertical;
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:14px;
+    background:#0c0f14;
+    color:var(--text);
+    font:14px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+
+  .out{
+    min-height:320px;
+  }
+
+  .tag{
+    font-size:12px;
+    font-weight:800;
+    color:var(--muted);
+    text-transform:uppercase;
+    letter-spacing:.08em;
+    margin-bottom:8px;
+  }
+
+  .status{
+    font-size:14px;
+    color:var(--muted);
+    margin-top:10px;
+  }
+
+  .ok{
+    color:var(--ok);
+    font-weight:800;
+  }
+
+  .grid{
+    display:grid;
+    grid-template-columns:1fr;
+    gap:16px;
+  }
+
+  @media (min-width: 980px){
+    .grid{
+      grid-template-columns:1fr 1fr;
+    }
+  }
+
+  label.chk{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    color:var(--muted);
+    font-size:14px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Preparador de texto → PDF_TEXTO</h1>
+  <div class="muted">Pega aquí el texto copiado del PDF, límpialo y genera el bloque listo para tu HTML principal.</div>
+
+  <div class="panel">
+    <div class="tag">Texto pegado desde el PDF</div>
+    <textarea id="txtEntrada" placeholder="Pega aquí el texto bruto del PDF..."></textarea>
+
+    <div class="row" style="margin-top:12px;">
+      <label class="chk">
+        <input type="checkbox" id="chkQuitarGuiones" checked>
+        Arreglar palabras partidas por guion
+      </label>
+
+      <label class="chk">
+        <input type="checkbox" id="chkReconstruir" checked>
+        Reconstruir párrafos automáticamente
+      </label>
+
+      <label class="chk">
+        <input type="checkbox" id="chkTitulos" checked>
+        Respetar títulos y epígrafes
+      </label>
+    </div>
+
+    <div class="row" style="margin-top:14px;">
+      <button class="btn" id="btnLimpiarTexto">Limpiar texto</button>
+      <button class="btn sec" id="btnGenerarJS">Generar bloque JS</button>
+      <button class="btn sec" id="btnCopiarLimpio">Copiar limpio</button>
+      <button class="btn sec" id="btnCopiarJS">Copiar bloque JS</button>
+      <button class="btn sec" id="btnVaciar">Vaciar</button>
+    </div>
+
+    <div id="status" class="status">Esperando texto…</div>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <div class="tag">Texto limpio</div>
+      <textarea id="txtLimpio" placeholder="Aquí aparecerá el texto limpio..."></textarea>
+    </div>
+
+    <div class="panel">
+      <div class="tag">Bloque listo para pegar en tu código</div>
+      <textarea id="txtJS" class="out" placeholder="Aquí aparecerá:
+const PDF_TEXTO = `...`.trim();"></textarea>
+    </div>
+  </div>
+</div>
+
+<script>
+const txtEntrada = document.getElementById("txtEntrada");
+const txtLimpio = document.getElementById("txtLimpio");
+const txtJS = document.getElementById("txtJS");
+const statusBox = document.getElementById("status");
+
+const chkQuitarGuiones = document.getElementById("chkQuitarGuiones");
+const chkReconstruir = document.getElementById("chkReconstruir");
+const chkTitulos = document.getElementById("chkTitulos");
+
+const btnLimpiarTexto = document.getElementById("btnLimpiarTexto");
+const btnGenerarJS = document.getElementById("btnGenerarJS");
+const btnCopiarLimpio = document.getElementById("btnCopiarLimpio");
+const btnCopiarJS = document.getElementById("btnCopiarJS");
+const btnVaciar = document.getElementById("btnVaciar");
+
+function setStatus(msg, ok=false){
+  statusBox.innerHTML = ok ? `<span class="ok">${msg}</span>` : msg;
+}
+
+function escapeTemplateLiteral(str){
+  return String(str)
+    .replace(/\\/g, "\\\\")
+    .replace(/`/g, "\\`")
+    .replace(/\$\{/g, "\\${");
+}
+
+function normalizarTextoBase(t){
+  return String(t || "")
+    .replace(/\r/g, "")
+    .replace(/\u00A0/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
+function esTitulo(linea){
+  return /^\d+(?:\.\d+)*\.\s+/.test(linea);
+}
+
+function limpiarTextoPegado(texto){
+  let t = normalizarTextoBase(texto);
+
+  if(!t) return "";
+
+  if(chkQuitarGuiones.checked){
+    t = t.replace(/([A-Za-zÁÉÍÓÚáéíóúÑñ])-\n([A-Za-zÁÉÍÓÚáéíóúÑñ])/g, "$1$2");
+  }
+
+  const lineas = t.split("\n").map(x => x.trim()).filter(Boolean);
+  const paras = [];
+  let actual = "";
+
+  for(let i = 0; i < lineas.length; i++){
+    const linea = lineas[i];
+
+    if(chkTitulos.checked && esTitulo(linea)){
+      if(actual.trim()) paras.push(actual.trim());
+      paras.push(linea);
+      actual = "";
+      continue;
+    }
+
+    if(!chkReconstruir.checked){
+      if(actual.trim()) paras.push(actual.trim());
+      actual = linea;
+      continue;
+    }
+
+    if(!actual){
+      actual = linea;
+      continue;
+    }
+
+    const actualTerminaFuerte = /[.!?]$/.test(actual);
+    const actualTerminaSuave = /[,;:]$/.test(actual);
+    const nuevaEmpiezaMayus = /^[A-ZÁÉÍÓÚÑ]/.test(linea);
+
+    if(actualTerminaFuerte && nuevaEmpiezaMayus){
+      paras.push(actual.trim());
+      actual = linea;
+      continue;
+    }
+
+    if(actualTerminaSuave){
+      actual += " " + linea;
+      continue;
+    }
+
+    actual += " " + linea;
+  }
+
+  if(actual.trim()) paras.push(actual.trim());
+
+  const salida = [];
+  for(const p of paras){
+    if(chkTitulos.checked && esTitulo(p)){
+      if(salida.length && salida[salida.length - 1] !== "") salida.push("");
+      salida.push(p);
+      continue;
+    }
+    salida.push(p);
+  }
+
+  return salida.join("\n\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+btnLimpiarTexto.addEventListener("click", () => {
+  const entrada = txtEntrada.value.trim();
+  if(!entrada){
+    setStatus("Pega primero el texto bruto del PDF.");
+    return;
+  }
+
+  const limpio = limpiarTextoPegado(entrada);
+  txtLimpio.value = limpio;
+  setStatus("Texto limpiado.", true);
+});
+
+btnGenerarJS.addEventListener("click", () => {
+  const limpio = txtLimpio.value.trim() || limpiarTextoPegado(txtEntrada.value);
+  if(!limpio){
+    setStatus("No hay texto para generar.");
+    return;
+  }
+
+  txtLimpio.value = limpio;
+  txtJS.value = "const PDF_TEXTO = `\n" + escapeTemplateLiteral(limpio) + "\n`.trim();";
+  setStatus("Bloque JS generado.", true);
+});
+
+btnCopiarLimpio.addEventListener("click", async () => {
+  try{
+    const valor = txtLimpio.value.trim();
+    if(!valor){
+      setStatus("No hay texto limpio para copiar.");
+      return;
+    }
+    await navigator.clipboard.writeText(valor);
+    setStatus("Texto limpio copiado.", true);
+  }catch{
+    setStatus("No se pudo copiar automáticamente.");
+  }
+});
+
+btnCopiarJS.addEventListener("click", async () => {
+  try{
+    const valor = txtJS.value.trim();
+    if(!valor){
+      setStatus("No hay bloque JS para copiar.");
+      return;
+    }
+    await navigator.clipboard.writeText(valor);
+    setStatus("Bloque JS copiado.", true);
+  }catch{
+    setStatus("No se pudo copiar automáticamente.");
+  }
+});
+
+btnVaciar.addEventListener("click", () => {
+  txtEntrada.value = "";
+  txtLimpio.value = "";
+  txtJS.value = "";
+  setStatus("Vacío.");
+});
+</script>
+</body>
+</html>
